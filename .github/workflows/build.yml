@@ -28,3 +28,25 @@ jobs:
         with:
           name: application-jar
           path: target/*.jar
+
+            # ---- НОВАЯ ЗАДАЧА: SAST с Semgrep ----
+            sast:
+              runs-on: ubuntu-latest
+              needs: build          # опционально: ждём завершения сборки
+              steps:
+                - name: Checkout code
+                  uses: actions/checkout@v4
+
+                - name: Run Semgrep
+                  uses: semgrep/semgrep-action@v1
+                  with:
+                    config: auto
+                    output: semgrep.sarif
+                    output_format: sarif
+
+                - name: Upload SARIF report
+                  uses: github/codeql-action/upload-sarif@v3
+                  with:
+                    sarif_file: semgrep.sarif
+                    category: semgrep
+
