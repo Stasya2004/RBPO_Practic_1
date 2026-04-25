@@ -1,4 +1,4 @@
-name: Build and Test with JDK 22
+name: Java CI with Maven
 
 on:
   pull_request:
@@ -16,8 +16,8 @@ jobs:
       - name: Verify Java version
         run: java -version
 
-      - name: Set mvnw permissions
-        if: exists('mvnw')
+      - name: Make mvnw executable
+        if: hashFiles('mvnw') != ''
         run: chmod +x mvnw
 
       - name: Build with Maven
