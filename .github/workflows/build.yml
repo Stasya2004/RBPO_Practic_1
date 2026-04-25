@@ -36,15 +36,16 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Run Semgrep (Docker)
+      - name: Run Semgrep (generate SARIF)
         run: |
-          docker run --rm \
-            -v "${{ github.workspace }}:/src" \
-            semgrep/semgrep \
-            semgrep ci --config auto --sarif -o /src/semgrep.sarif /src
+          docker run --rm -v "${{ github.workspace }}:/src" semgrep/semgrep semgrep ci --config auto --sarif --output /src/semgrep.sarif /src
         continue-on-error: true
 
+      - name: List files (debug)
+        run: ls -la ${{ github.workspace }}
+
       - name: Upload SARIF report
+        if: success() || failure()
         uses: github/codeql-action/upload-sarif@v4
         with:
           sarif_file: semgrep.sarif
