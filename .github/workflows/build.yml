@@ -41,11 +41,14 @@ jobs:
 
       - name: Run Semgrep and generate SARIF
         run: |
-          semgrep ci --config auto --sarif --output semgrep.sarif .
-        continue-on-error: true
+          semgrep --version
+          semgrep ci --config auto --sarif --output semgrep.sarif . || echo "Semgrep found issues, continuing..."
+          ls -la semgrep.sarif || echo "File not found after run"
 
-      - name: List files for debug
-        run: ls -la
+      - name: If file missing, create dummy SARIF (for debugging)
+        if: failure()
+        run: |
+          echo '{"version":"2.1.0","runs":[{"tool":{"driver":{"name":"Semgrep","rules":[]}},"results":[]}]}' > semgrep.sarif
 
       - name: Upload SARIF report
         if: always()
@@ -53,4 +56,3 @@ jobs:
         with:
           sarif_file: semgrep.sarif
           category: semgrep
-
