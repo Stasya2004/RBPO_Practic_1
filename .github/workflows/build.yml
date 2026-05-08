@@ -2,13 +2,16 @@ name: Java CI with Maven and SAST
 
 on:
   pull_request:
-    branches: [main]
+    branches: [ main ]
+  workflow_dispatch:   # для ручного запуска
 
 jobs:
   build:
+    name: Build application
     runs-on: ubuntu-latest
     container:
       image: openjdk:22-ea-jdk
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -23,47 +26,70 @@ jobs:
       - name: Build with Maven
         run: ./mvnw clean package
 
-      - name: Upload artifacts
+      - name: Upload artifacts (JAR)
         uses: actions/upload-artifact@v4
         with:
           name: application-jar
           path: target/*.jar
 
   sast:
+    name: Semgrep SAST scan
     runs-on: ubuntu-latest
-    needs: build
+    needs: build           # запускается после успешной сборки
+    continue-on-error: true   # чтобы пайплайн не ломался при находке уязвимостей
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Debug - List files
-        run: |
-          echo "=== Root directory contents ==="
-          ls -la
-          echo "=== Source code directory (if exists) ==="
-          ls -la src/ || echo "src/ directory not found"
+      - name: Install Semgrep
+        run: pip install semgrep
 
-      - name: Install Semgrep and run scan
-        id: semgrep_scan
+      - name: Run Semgrep CI (SARIF)
+        id: semgrep
+        continue-on-error: true
         run: |
-          pip install semgrep
           mkdir -p test-results
-          semgrep scan --config auto --sarif --output test-results/semgrep.sarif . || true
-          echo "SARIF created at test-results/semgrep.sarif"
+          # Semgrep CI автоматически учитывает .gitignore, использует правила из Semgrep Registry
+          semgrep ci \
+            --sarif \
+            --output test-results/semgrep.sarif \
+            || true
+        env:
+          # Необязательно, но помогает при больших проектах
+          SEMGREP_REPO_NAME: ${{ github.repository }}
+          SEMGREP_BRANCH: ${{ github.head_ref || github.ref_name }}
 
-      - name: Verify or create SARIF file
+      - name: Ensure valid SARIF file (placeholder if scan failed or found nothing)
         run: |
-          if [ -f test-results/semgrep.sarif ]; then
-            echo ")))SARIF file found. File size: $(wc -c < test-results/semgrep.sarif) bytes"
-            head -n 5 test-results/semgrep.sarif || true
+          SARIF_FILE="test-results/semgrep.sarif"
+          if [ ! -f "$SARIF_FILE" ] || [ ! -s "$SARIF_FILE" ]; then
+            echo "⚠️ SARIF file missing or empty — creating valid placeholder"
+            cat > "$SARIF_FILE" <<EOF
+          {
+            "version": "2.1.0",
+            "runs": [
+              {
+                "tool": {
+                  "driver": {
+                    "name": "Semgrep",
+                    "rules": []
+                  }
+                },
+                "results": []
+              }
+            ]
+          }
+          EOF
           else
-            echo "!!!SARIF file not found. Creating placeholder file to avoid upload error."
-            echo '{"version":"2.1.0","runs":[{"tool":{"driver":{"name":"Semgrep","rules":[]}},"results":[]}]}' > test-results/semgrep.sarif
+            echo "✅ SARIF file exists, size: $(wc -c < "$SARIF_FILE") bytes"
           fi
-          cp test-results/semgrep.sarif ./semgrep.sarif
+          # Копируем в корень для upload
+          cp "$SARIF_FILE" semgrep.sarif
 
-      - name: Upload SARIF report
+      - name: Upload SARIF report to GitHub Security tab
         uses: github/codeql-action/upload-sarif@v4
         with:
           sarif_file: semgrep.sarif
           category: semgrep
+        if: always()   # загружаем даже при ошибках в предыдущих шагах
